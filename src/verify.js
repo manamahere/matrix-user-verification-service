@@ -2,6 +2,7 @@ const logger = require('./logger');
 const matrixUtils = require('./matrixUtils');
 const utils = require('./utils');
 
+require('dotenv').config();
 /**
  * Fetch power levels for a room.
  *
@@ -82,7 +83,6 @@ async function verifyOpenIDToken(req) {
     let response;
     let serverName;
     if (process.env.UVS_OPENID_VERIFY_SERVER_NAME) {
-        if (req.body.matrix_server_name !== process.env.UVS_OPENID_VERIFY_SERVER_NAME) {
         const verifyName = process.env.UVS_OPENID_VERIFY_SERVER_NAME;
         const [ subdomain ] = verifyName.split('.');
         const domainPart = verifyName.includes('.')
