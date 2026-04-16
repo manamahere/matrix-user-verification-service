@@ -83,6 +83,16 @@ async function verifyOpenIDToken(req) {
     let serverName;
     if (process.env.UVS_OPENID_VERIFY_SERVER_NAME) {
         if (req.body.matrix_server_name !== process.env.UVS_OPENID_VERIFY_SERVER_NAME) {
+        const verifyName = process.env.UVS_OPENID_VERIFY_SERVER_NAME;
+        const [ subdomain ] = verifyName.split('.');
+        const domainPart = verifyName.includes('.')
+            ? verifyName.split('.').slice(1).join('.')
+            : verifyName;
+
+        if (
+            req.body.matrix_server_name !== verifyName &&
+            req.body.matrix_server_name !== domainPart
+        ) {
             // Refuse to check token against any other servers
             logger.log(
                 'warn',
@@ -91,7 +101,9 @@ async function verifyOpenIDToken(req) {
             );
             return false;
         }
-        serverName = process.env.UVS_OPENID_VERIFY_SERVER_NAME;
+        // always verify against the full host name
+        serverName = verifyName;
+        homeserver = await matrixUtils.discoverHomeserverUrl(serverName, subdomain);
     } else {
         serverName = req.body.matrix_server_name;
     }
@@ -101,7 +113,7 @@ async function verifyOpenIDToken(req) {
         logger.log('warn', `Failed to discover homeserver URL: ${error}`, {requestId: req.requestId});
         return false;
     }
-    if (!homeserver.homeserverUrl) {
+    if (!homeserver.homeserverUrl || !homeserver.homeserverUrl) {
         logger.log('warn',
             'Empty or invalid homeserverUrl from discoverHomeserverUrl response',
             {requestId: req.requestId},
@@ -123,9 +135,21 @@ async function verifyOpenIDToken(req) {
         return false;
     }
     if (response && response.data && response.data.sub) {
-        // Ensure the user ID actually matches the server name we checked against
-        if (typeof response.data.sub !== 'string' || !response.data.sub.endsWith(`:${serverName}`)) {
-            // This does not match, fail
+        // Ensure the user ID actually matches the server name (full or base domain)
+        if (typeof response.data.sub !== 'string') {
+            logger.log(
+                'warn',
+                `Invalid sub type: ${typeof response.data.sub}`,
+                {requestId: req.requestId},
+            );
+            return false;
+        }
+        const parts = response.data.sub.split(':');
+        const subHost = parts[parts.length - 1];
+        const domainPart = serverName.includes('.')
+            ? serverName.split('.').slice(1).join('.')
+            : serverName;
+        if (subHost !== serverName && subHost !== domainPart) {
             logger.log(
                 'warn',
                 `Matrix user ID ${response.data.sub} from OpenID userinfo lookup does not ` +
